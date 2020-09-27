@@ -7,18 +7,26 @@ import (
 )
 
 func TestEncryptAndDecryptValue(t *testing.T) {
-	encryptedValue := EncryptValue("secret", "password123")
+	encryptedValue, err := Encrypt([]byte("password123"), []byte("secret"))
 
+	assert.NoError(t, err)
 	assert.NotEqual(t, encryptedValue, "secret")
 
-	decruptedValue := DecryptValue(encryptedValue, "password123")
+	decryptedValue, err := Decrypt([]byte("password123"), []byte(encryptedValue))
 
-	assert.Equal(t, decruptedValue, "secret")
+	assert.NoError(t, err)
+
+	assert.Equal(t, string(decryptedValue), "secret")
 }
 
 func TestEncryptMultipleTimesGivesDifferentValues(t *testing.T) {
-	encryptedValue1 := EncryptValue("secret", "password123")
-	encryptedValue2 := EncryptValue("secret", "password123")
+	encryptedValue1, err := Encrypt([]byte("password123"), []byte("secret"))
+
+	assert.NoError(t, err)
+
+	encryptedValue2, err := Encrypt([]byte("password123"), []byte("secret"))
+
+	assert.NoError(t, err)
 
 	assert.NotEqual(t, encryptedValue1, encryptedValue2)
 }

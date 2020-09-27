@@ -4,75 +4,63 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha1"
-	"encoding/hex"
-	"io"
 
-	"golang.org/x/crypto/pbkdf2"
+	"golang.org/x/crypto/scrypt"
 )
 
-func EncryptValue(value string, password string) string {
-
-	key := []byte(password)
-	nonce := make([]byte, 12)
-
-	// Randomizing the nonce
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		panic(err.Error())
-	}
-
-	dk := pbkdf2.Key(key, nonce, 4096, 32, sha1.New)
-
-	block, err := aes.NewCipher(dk)
+func Encrypt(key, data []byte) ([]byte, error) {
+	key, salt, err := DeriveKey(key, nil)
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
-
-	aesgcm, err := cipher.NewGCM(block)
+	blockCipher, err := aes.NewCipher(key)
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
-
-	plaintext := []byte(value)
-
-	ciphertext := aesgcm.Seal(nil, nonce, plaintext, nil)
-
-	// Append the nonce to the end of file
-	encryptedValue := append(ciphertext, nonce...)
-
-	encryptedString := string(encryptedValue)
-
-	return encryptedString
+	gcm, err := cipher.NewGCM(blockCipher)
+	if err != nil {
+		return nil, err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err = rand.Read(nonce); err != nil {
+		return nil, err
+	}
+	ciphertext := gcm.Seal(nonce, nonce, data, nil)
+	ciphertext = append(ciphertext, salt...)
+	return ciphertext, nil
 }
-
-func DecryptValue(value string, password string) string {
-
-	ciphertext := []byte(value)
-
-	key := []byte(password)
-	salt := ciphertext[len(ciphertext)-12:]
-	str := hex.EncodeToString(salt)
-
-	nonce, err := hex.DecodeString(str)
-
-	dk := pbkdf2.Key(key, nonce, 4096, 32, sha1.New)
-
-	block, err := aes.NewCipher(dk)
+func Decrypt(key, data []byte) ([]byte, error) {
+	salt, data := data[len(data)-32:], data[:len(data)-32]
+	key, _, err := DeriveKey(key, salt)
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
-
-	aesgcm, err := cipher.NewGCM(block)
+	blockCipher, err := aes.NewCipher(key)
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
-
-	plaintext, err := aesgcm.Open(nil, nonce, ciphertext[:len(ciphertext)-12], nil)
+	gcm, err := cipher.NewGCM(blockCipher)
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
-
-	plaintextString := string(plaintext)
-
-	return plaintextString
+	nonce, ciphertext := data[:gcm.NonceSize()], data[gcm.NonceSize():]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, err
+	}
+	return plaintext, nil
+}
+func DeriveKey(password, salt []byte) ([]byte, []byte, error) {
+	if salt == nil {
+		salt = make([]byte, 32)
+		if _, err := rand.Read(salt); err != nil {
+			return nil, nil, err
+		}
+	}
+	// https://blog.filippo.io/the-scrypt-parameters/
+	key, err := scrypt.Key(password, salt, 16384, 8, 1, 32)
+	if err != nil {
+		return nil, nil, err
+	}
+	return key, salt, nil
 }
